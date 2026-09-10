@@ -43,7 +43,7 @@ def chat_lakshya(message, history):
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
 
     response = client.models.generate_content_stream(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=formatted_contents,
         config=types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION
