@@ -26,23 +26,33 @@ Emergency Exam Rule:
 - Har concept samjhane ke baad turant 1 oral practice question poocho.
 """
 
-
+def extract_text(item):
+    if isinstance(item, str):
+        return item
+    if isinstance(item, dict):
+        return item.get("text", "")
+    if isinstance(item, list):
+        return "".join(extract_text(sub) for sub in item)
+    return str(item)
 
 def chat_lakshya(message, history):
     formatted_contents = []
-    for item in history:
-        if isinstance(item, dict):
-            u_text = item.get("content", "") if item.get("role") == "user" else ""
-            m_text = item.get("content", "") if item.get("role") == "assistant" else ""
+    for turn in history:
+        if isinstance(turn, dict):
+            role = "user" if turn.get("role") == "user" else "model"
+            content = extract_text(turn.get("content", ""))
+            if content:
+                formatted_contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
+        elif isinstance(turn, (list, tuple)) and len(turn) == 2:
+            u_text = extract_text(turn[0])
+            m_text = extract_text(turn[1])
             if u_text:
                 formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=u_text)]))
             if m_text:
                 formatted_contents.append(types.Content(role="model", parts=[types.Part.from_text(text=m_text)]))
-        elif isinstance(item, (list, tuple)):
-            formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=str(item[0]))]))
-            formatted_contents.append(types.Content(role="model", parts=[types.Part.from_text(text=str(item[1]))]))
 
-    formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=message)]))
+    user_msg = extract_text(message)
+    formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
     response = client.models.generate_content_stream(
         model="gemini-3.6-flash",
@@ -56,6 +66,9 @@ def chat_lakshya(message, history):
     for chunk in response:
         full_reply += chunk.text
         yield full_reply
+        
+
+
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
