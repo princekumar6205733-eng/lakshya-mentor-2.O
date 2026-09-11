@@ -6,16 +6,13 @@ import gradio as gr
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-SYSTEM_INSTRUCTION = """
-Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho.
-Tumhara main role hai Abhishek ko uski Class 9 Bihar Board ki padhai me help karna, concepts ko ekdum aasan bhasha (Hinglish/Hindi) me samjhana, aur motivate rakhna.
-Hamesha use 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly, desi aur supportive honi chahiye.
-
-CRITICAL RULES:
-1. Kabhi bhi apna internal monologue, thought process, chain of thought ya analysis output me mat likho.
-2. Seedha final reply do. Koi checklist ya evaluation text bilkul nahi aana chahiye.
-3. Maths ya Science ke equations me '$' ya '$$' bilkul mat lagao. Normal text me likho (Jaise: x^2 + 5x + 6 = 0, sqrt(x), a/b).
-"""
+SYSTEM_INSTRUCTION = (
+    "Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. "
+    "Class 9 Bihar Board ki padhai aasan bhasha (Hinglish/Hindi) me samjhana aur motivate rakhna tumhara kaam hai. "
+    "Abhishek ko hamesha 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly aur desi rakho. "
+    "Kewal aur kewal seedha dialogue reply do. Koi thinking, draft ya checklist output me mat likho. "
+    "Maths me '$' ka use bilkul mat karna, normal plain text me likho."
+)
 
 CIRCUIT_BREAKER = {
     "is_open": False,
@@ -23,33 +20,63 @@ CIRCUIT_BREAKER = {
     "cooldown_seconds": 60
 }
 
-def clean_math_text(text):
+def clean_mentor_output(text):
     if not text:
         return ""
     # LaTeX stripping
     text = re.sub(r'\${1,2}', '', text)
-    # Agar model ne galti se Draft/Thinking likha ho toh use saaf karna
-    if "Refining for Tone" in text:
-        text = text.split("Refining for Tone")[-1].replace('("Desi" and "Mentor-like"):', '')
-    return text.strip()
+    
+    # Agar output me double quotes me response ho toh seedha wahi uthao
+    quoted_matches = re.findall(r'"([^"]{15,})"', text, re.DOTALL)
+    if quoted_matches:
+        return quoted_matches[-1].strip()
+
+    # Checklist, bullets aur internal monologue ko filter karna
+    cleaned_lines = []
+    for line in text.split('\n'):
+        l = line.strip()
+        if l.startswith(('•', '*', '-', 'o ', 'User:', 'Persona:', 'Role:', 'Target', 'Constraint', 'Greeting:', 'Refining', 'Draft')):
+            continue
+        cleaned_lines.append(line)
+        
+    res = '\n'.join(cleaned_lines).strip()
+    return res if res else text.strip()
 
 def get_available_models():
+    """Heavy/Pro/TTS models ko block karke sirf reliable Flash chat models filter karta hai"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+    # Hardcoded permanent fallback agar network call miss ho
+    fallback_flash = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     try:
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
             data = res.json()
             valid_models = []
+            
+            # Heavy aur problematic model keywords
+            blocked_keywords = [
+                "tts", "audio", "embed", "imagen", "robot", 
+                "pro", "ultra", "exp", "vision", "learnlm"
+            ]
+
             for m in data.get("models", []):
                 methods = m.get("supportedGenerationMethods", [])
+                name = m.get("name", "").replace("models/", "")
+                
+                # Sirf text generation wale flash models ko permission
                 if "generateContent" in methods:
-                    name = m.get("name", "").replace("models/", "")
-                    valid_models.append(name)
-            print(f"ACTIVE_GOOGLE_MODELS: {valid_models}", flush=True)
-            return valid_models
+                    if any(bad in name.lower() for bad in blocked_keywords):
+                        continue
+                    if "flash" in name.lower():
+                        valid_models.append(name)
+            
+            if valid_models:
+                print(f"ACTIVE_FLASH_MODELS_LOCKED: {valid_models}", flush=True)
+                return valid_models
     except Exception as e:
         print(f"FAILED_FETCHING_MODELS: {repr(e)}", flush=True)
-    return []
+        
+    return fallback_flash
 
 ACTIVE_MODELS = get_available_models()
 
@@ -74,10 +101,7 @@ def chat_lakshya(message, history):
 
     if not ACTIVE_MODELS:
         ACTIVE_MODELS = get_available_models()
-        if not ACTIVE_MODELS:
-            return "Chote, Google API se koi active model nahi mila. API Key check karo!"
 
-    # Multi-turn structured chat format
     contents = []
     if history:
         for turn in history:
@@ -96,7 +120,10 @@ def chat_lakshya(message, history):
         "system_instruction": {
             "parts": [{"text": SYSTEM_INSTRUCTION}]
         },
-        "contents": contents
+        "contents": contents,
+        "generationConfig": {
+            "temperature": 0.7
+        }
     }
 
     last_error = ""
@@ -109,7 +136,7 @@ def chat_lakshya(message, history):
                 data = res.json()
                 reply = data["candidates"][0]["content"]["parts"][0]["text"]
                 CIRCUIT_BREAKER["is_open"] = False
-                return clean_math_text(reply)
+                return clean_mentor_output(reply)
             else:
                 last_error = f"HTTP {res.status_code} on {model_name}"
                 print(f"FAILED {model_name}: {res.status_code} - {res.text[:100]}", flush=True)
@@ -129,5 +156,6 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
+    
 
     
