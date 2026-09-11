@@ -17,11 +17,18 @@ IMPORTANT FORMATTING RULES:
 3. Simple aur saaf readable text hona chahiye.
 """
 
-MODELS = [
-    "gemini-3.6-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
+# 3.6-flash sabse pehle, fallback me 2.0 aur 1.5
+ENDPOINTS = [
+    ("gemini-3.6-flash", "v1beta"),
+    ("gemini-2.0-flash", "v1beta"),
+    ("gemini-1.5-flash", "v1")
 ]
+
+CIRCUIT_BREAKER = {
+    "is_open": False,
+    "last_failure_time": 0,
+    "cooldown_seconds": 60
+}
 
 def clean_math_text(text):
     if not text:
@@ -29,6 +36,17 @@ def clean_math_text(text):
     return re.sub(r'\${1,2}', '', text).strip()
 
 def chat_lakshya(message, history):
+    current_time = time.time()
+
+    # Circuit Breaker Protection
+    if CIRCUIT_BREAKER["is_open"]:
+        elapsed = current_time - CIRCUIT_BREAKER["last_failure_time"]
+        if elapsed < CIRCUIT_BREAKER["cooldown_seconds"]:
+            remaining = int(CIRCUIT_BREAKER["cooldown_seconds"] - elapsed)
+            return f"Chote, Google server abhi thoda garam hai! Bas {remaining} second ruko, fir batata hoon."
+        else:
+            CIRCUIT_BREAKER["is_open"] = False
+
     if not API_KEY:
         return "Error: GEMINI_API_KEY Render Environment Variables me nahi mili!"
 
@@ -36,6 +54,7 @@ def chat_lakshya(message, history):
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
+    # Multi-turn history ko plain safe text me pack karna
     prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
     if history:
         for turn in history:
@@ -51,8 +70,9 @@ def chat_lakshya(message, history):
 
     last_error = ""
 
-    for model_name in MODELS:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
+    # Model Fallback Loop
+    for model_name, api_ver in ENDPOINTS:
+        url = f"https://generativelanguage.googleapis.com/v{api_ver}/models/{model_name}:generateContent?key={API_KEY}"
         payload = {
             "contents": [{
                 "parts": [{"text": prompt}]
@@ -63,17 +83,20 @@ def chat_lakshya(message, history):
             if res.status_code == 200:
                 data = res.json()
                 reply = data["candidates"][0]["content"]["parts"][0]["text"]
+                CIRCUIT_BREAKER["is_open"] = False
                 return clean_math_text(reply)
             else:
-                last_error = f"HTTP {res.status_code}: {res.text[:120]}"
-                print(f"FAILED {model_name}: {last_error}", flush=True)
+                last_error = f"HTTP {res.status_code} on {model_name}"
+                print(f"FAILED {model_name}: {res.status_code} - {res.text[:100]}", flush=True)
         except Exception as e:
-            last_error = f"Exception: {repr(e)[:100]}"
+            last_error = f"Exception on {model_name}: {repr(e)[:80]}"
             print(f"ERR {model_name}: {last_error}", flush=True)
             continue
 
-    # Agar teeno fail ho jayein toh exact reason chat me dikhega
-    return f"Chote, Google server ne mana kiya. Reason: {last_error}"
+    # Agar sab endpoints fail ho jayein tab circuit open hoga
+    CIRCUIT_BREAKER["is_open"] = True
+    CIRCUIT_BREAKER["last_failure_time"] = time.time()
+    return f"Chote, abhi Google server par load zyada hai. (Reason: {last_error})"
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
@@ -82,6 +105,7 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
+    
 
 
 
