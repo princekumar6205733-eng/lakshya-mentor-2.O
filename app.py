@@ -18,10 +18,11 @@ IMPORTANT FORMATTING RULES:
 """
 
 ENDPOINTS = [
-    ("gemini-2.5-flash", "v1beta"),
-    ("gemini-2.0-flash", "v1beta"),
-    ("gemini-1.5-flash-latest", "v1beta")
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
 ]
+
 
 
 CIRCUIT_BREAKER = {
