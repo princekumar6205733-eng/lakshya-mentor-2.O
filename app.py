@@ -55,9 +55,8 @@ def chat_lakshya(message, history):
 
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
-
-    # Gemini 3.6 Flash ke sath direct non-streaming call
-    for attempt in range(3):
+    
+        for attempt in range(3):
         try:
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
@@ -69,9 +68,11 @@ def chat_lakshya(message, history):
             return response.text
         except Exception:
             if attempt < 2:
-                time.sleep(2)
+                time.sleep(3)
                 continue
             return "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+            
+            
             
                 
     
