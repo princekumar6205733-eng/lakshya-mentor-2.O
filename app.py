@@ -35,6 +35,8 @@ def extract_text(item):
         return "".join(extract_text(sub) for sub in item)
     return str(item)
 
+import time
+
 def chat_lakshya(message, history):
     formatted_contents = []
     for turn in history:
@@ -54,18 +56,29 @@ def chat_lakshya(message, history):
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
-    response = client.models.generate_content_stream(
-        model="gemini-3.6-flash",
-        contents=formatted_contents,
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION
-        )
-    )
-
-    full_reply = ""
-    for chunk in response:
-        full_reply += chunk.text
-        yield full_reply
+    # Model wahi rahega, temporary 503 traffic spike ke liye automatic 3 retry
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content_stream(
+                model="gemini-3.6-flash",
+                contents=formatted_contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION
+                )
+            )
+            full_reply = ""
+            for chunk in response:
+                full_reply += chunk.text
+                yield full_reply
+            return
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(2)
+                continue
+            else:
+                yield "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+                
+    
         
 
 
