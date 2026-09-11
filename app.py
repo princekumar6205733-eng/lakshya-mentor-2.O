@@ -17,12 +17,6 @@ IMPORTANT FORMATTING RULES:
 3. Simple aur saaf readable text hona chahiye.
 """
 
-ENDPOINTS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
-]
-
 CIRCUIT_BREAKER = {
     "is_open": False,
     "last_failure_time": 0,
@@ -34,7 +28,29 @@ def clean_math_text(text):
         return ""
     return re.sub(r'\${1,2}', '', text).strip()
 
+def get_available_models():
+    """Google API se directly active supported models fetch karta hai"""
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
+    try:
+        res = requests.get(url, timeout=10)
+        if res.status_code == 200:
+            data = res.json()
+            valid_models = []
+            for m in data.get("models", []):
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" in methods:
+                    name = m.get("name", "").replace("models/", "")
+                    valid_models.append(name)
+            print(f"ACTIVE_GOOGLE_MODELS: {valid_models}", flush=True)
+            return valid_models
+    except Exception as e:
+        print(f"FAILED_FETCHING_MODELS: {repr(e)}", flush=True)
+    return []
+
+ACTIVE_MODELS = get_available_models()
+
 def chat_lakshya(message, history):
+    global ACTIVE_MODELS
     current_time = time.time()
 
     if CIRCUIT_BREAKER["is_open"]:
@@ -52,6 +68,11 @@ def chat_lakshya(message, history):
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
+    if not ACTIVE_MODELS:
+        ACTIVE_MODELS = get_available_models()
+        if not ACTIVE_MODELS:
+            return "Chote, Google API se koi active model nahi mila. API Key check karo!"
+
     prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
     if history:
         for turn in history:
@@ -67,7 +88,8 @@ def chat_lakshya(message, history):
 
     last_error = ""
 
-    for model_name in ENDPOINTS:
+    # Jo model active hai sirf usi ko call karega
+    for model_name in ACTIVE_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
         payload = {
             "contents": [{
@@ -91,7 +113,7 @@ def chat_lakshya(message, history):
 
     CIRCUIT_BREAKER["is_open"] = True
     CIRCUIT_BREAKER["last_failure_time"] = time.time()
-    return f"Chote, abhi Google server par load zyada hai. (Reason: {last_error})"
+    return f"Chote, Google server ne mana kiya. (Reason: {last_error})"
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
@@ -100,4 +122,4 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
-                
+
