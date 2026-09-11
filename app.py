@@ -91,34 +91,34 @@ def chat_lakshya(message, history):
     if not ACTIVE_MODELS:
         ACTIVE_MODELS = get_available_models()
 
-    # Robust multi-turn history builder (Strict alternate user/model structure)
+    # Gradio to Gemini strictly-alternating history converter
     contents = []
     if history:
         for turn in history:
-            u_val, m_val = "", ""
-            # Robust multi-turn history builder (Strict alternate user/model structure)
-    contents = []
-    if history:
-        for turn in history:
-            u_val, m_val = "", ""
-            if isinstance(turn, (list, tuple)) and len(turn) >= 2:
-                u_val = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "")
-                m_val = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "")
-            elif isinstance(turn, dict):
-                r = turn.get("role", "")
-                c = turn.get("content", "")
-                if r == "user":
-                    u_val = c
-                else:
-                    m_val = c
+            if isinstance(turn, dict):
+                r = "user" if turn.get("role") == "user" else "model"
+                text_content = turn.get("content", "")
+                if isinstance(text_content, list):
+                    text_content = "".join([part.get("text", "") for part in text_content if isinstance(part, dict)])
+                text_content = str(text_content).strip()
+                if text_content:
+                    if not contents or contents[-1]["role"] != r:
+                        contents.append({"role": r, "parts": [{"text": text_content}]})
 
-            if u_val.strip():
-                contents.append({"role": "user", "parts": [{"text": u_val.strip()}]})
-            if m_val.strip():
-                contents.append({"role": "model", "parts": [{"text": m_val.strip()}]})
+            elif isinstance(turn, (list, tuple)) and len(turn) >= 2:
+                u_text = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "").strip()
+                m_text = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "").strip()
+                if u_text:
+                    if not contents or contents[-1]["role"] != "user":
+                        contents.append({"role": "user", "parts": [{"text": u_text}]})
+                if m_text:
+                    if not contents or contents[-1]["role"] != "model":
+                        contents.append({"role": "model", "parts": [{"text": m_text}]})
 
-    contents.append({"role": "user", "parts": [{"text": user_text}]})
-    
+    if contents and contents[-1]["role"] == "user":
+        contents[-1] = {"role": "user", "parts": [{"text": user_text}]}
+    else:
+        contents.append({"role": "user", "parts": [{"text": user_text}]})
 
     payload = {
         "system_instruction": {
@@ -160,4 +160,4 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
-            
+
