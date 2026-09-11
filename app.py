@@ -19,7 +19,6 @@ IMPORTANT FORMATTING RULES:
 3. Simple aur saaf readable text hona chahiye.
 """
 
-# Stable models sequence
 MODELS = [
     "gemini-2.5-flash",
     "gemini-2.0-flash",
@@ -37,10 +36,25 @@ def clean_math_text(text):
         return ""
     return re.sub(r'\${1,2}', '', text).strip()
 
+def build_prompt(user_text, history):
+    # Puri chat ko safe text format me convert karta hai (Zero AFC warning)
+    prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
+    if history:
+        for turn in history:
+            if isinstance(turn, (list, tuple)) and len(turn) >= 2:
+                u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
+                m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
+                prompt += f"User: {u}\nAssistant: {m}\n"
+            elif isinstance(turn, dict):
+                role = "User" if turn.get("role") == "user" else "Assistant"
+                c = turn.get("content", "")
+                prompt += f"{role}: {c}\n"
+    prompt += f"User: {user_text}\nAssistant:"
+    return prompt
+
 def chat_lakshya(message, history):
     current_time = time.time()
 
-    # Cooldown check
     if CIRCUIT_BREAKER["is_open"]:
         elapsed = current_time - CIRCUIT_BREAKER["last_failure_time"]
         if elapsed < CIRCUIT_BREAKER["cooldown_seconds"]:
@@ -53,43 +67,19 @@ def chat_lakshya(message, history):
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
-    # Gradio history ko GenAI Contents format me cleanly convert karna
-    contents = []
-    if history:
-        for turn in history:
-            try:
-                if isinstance(turn, (list, tuple)) and len(turn) >= 2:
-                    u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
-                    m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
-                    if u:
-                        contents.append(types.Content(role="user", parts=[types.Part.from_text(text=u)]))
-                    if m:
-                        contents.append(types.Content(role="model", parts=[types.Part.from_text(text=m)]))
-                elif isinstance(turn, dict):
-                    role = "user" if turn.get("role") == "user" else "model"
-                    c = turn.get("content", "")
-                    if c:
-                        contents.append(types.Content(role=role, parts=[types.Part.from_text(text=str(c))]))
-            except Exception:
-                continue
-
-    # Latest user query add karo
-    contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_text)]))
+    full_prompt = build_prompt(user_text, history)
 
     for model_name in MODELS:
         try:
             response = client.models.generate_content(
                 model=model_name,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
-                )
+                contents=full_prompt
             )
             if response and response.text:
                 CIRCUIT_BREAKER["is_open"] = False
                 return clean_math_text(response.text)
         except Exception as e:
-            print(f"Error on {model_name}: {repr(e)}")
+            print(f"MODEL_ERROR [{model_name}]: {repr(e)}")
             continue
 
     CIRCUIT_BREAKER["is_open"] = True
@@ -104,4 +94,3 @@ demo = gr.ChatInterface(
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
 
-                
