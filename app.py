@@ -66,11 +66,13 @@ def chat_lakshya(message, history):
                 )
             )
             return response.text
-        except Exception:
+                except Exception as e:
+            print("ASLI ERROR YAHAN HAI:", repr(e))
             if attempt < 2:
                 time.sleep(3)
                 continue
-            return "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+            return f"Chote, abhi Google server par load/issue hai. (Error: {str(e)[:50]})"
+
             
             
             
