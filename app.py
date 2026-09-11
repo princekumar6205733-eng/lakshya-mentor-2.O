@@ -8,10 +8,17 @@ api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
 
 SYSTEM_INSTRUCTION = """
-Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke bade bhaiya ke dwara banaye gaye ek personal 24/7 AI study companion aur mentor ho. 
-Tumhara main role hai Abhishek ko uski Class 9 Bihar Board ki padhai me help karna, concepts ko ekdum aasan bhasha (Hinglish/Hindi) me real-life examples ke sath samjhana, aur use motivate rakhna.
-Hamesha use 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly, supportive, aur inspiring honi chahiye.
+Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. 
+Tumhara main role hai Abhishek ko uski Class 9 Bihar Board ki padhai me help karna, concepts ko ekdum aasan bhasha (Hinglish/Hindi) me samjhana, aur motivate rakhna.
+Hamesha use 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly aur supportive honi chahiye.
 """
+
+# Quota issue se bachne ke liye available free models ka sequence
+MODELS_TO_TRY = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash"
+]
 
 def extract_text(item):
     if isinstance(item, str):
@@ -41,10 +48,11 @@ def chat_lakshya(message, history):
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
-    for attempt in range(3):
+    # Ek ek karke model try karega agar 429 aaye
+    for model_name in MODELS_TO_TRY:
         try:
             response = client.models.generate_content(
-                model="gemini-3.6-flash",
+                model=model_name,
                 contents=formatted_contents,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION
@@ -52,11 +60,10 @@ def chat_lakshya(message, history):
             )
             return response.text
         except Exception as e:
-            print("ASLI ERROR:", repr(e))
-            if attempt < 2:
-                time.sleep(3)
-                continue
-            return f"Chote, abhi Google server issue hai. (Error: {str(e)[:40]})"
+            print(f"Failed with {model_name}: {repr(e)}")
+            continue
+
+    return "Chote, abhi Google server par load zyada hai. Bas 1 minute ruk kar fir se pucho!"
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
@@ -65,3 +72,4 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
+
