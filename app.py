@@ -96,24 +96,35 @@ def chat_lakshya(message, history):
         return "Error: GEMINI_API_KEY Render Environment Variables me nahi mili!"
 
     user_text = message.get("text", "") if isinstance(message, dict) else str(message)
-    if not user_text.strip():
+    user_text = user_text.strip()
+    if not user_text:
         return "Kuch pucho toh sahi, Chote!"
 
     if not ACTIVE_MODELS:
         ACTIVE_MODELS = get_available_models()
 
+    # Bulletproof contents formatter for Gemini API (Avoids HTTP 400)
     contents = []
     if history:
         for turn in history:
+            u_text, m_text = "", ""
             if isinstance(turn, (list, tuple)) and len(turn) >= 2:
-                u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
-                m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
-                contents.append({"role": "user", "parts": [{"text": u}]})
-                contents.append({"role": "model", "parts": [{"text": m}]})
+                u_text = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "")
+                m_text = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "")
             elif isinstance(turn, dict):
-                role = "user" if turn.get("role") == "user" else "model"
-                contents.append({"role": role, "parts": [{"text": turn.get("content", "")}]})
+                role = turn.get("role", "")
+                text_val = turn.get("content", "")
+                if role == "user":
+                    u_text = text_val
+                else:
+                    m_text = text_val
 
+            if u_text.strip():
+                contents.append({"role": "user", "parts": [{"text": u_text.strip()}]})
+            if m_text.strip():
+                contents.append({"role": "model", "parts": [{"text": m_text.strip()}]})
+
+    # Latest user query
     contents.append({"role": "user", "parts": [{"text": user_text}]})
 
     payload = {
@@ -139,7 +150,7 @@ def chat_lakshya(message, history):
                 return clean_mentor_output(reply)
             else:
                 last_error = f"HTTP {res.status_code} on {model_name}"
-                print(f"FAILED {model_name}: {res.status_code} - {res.text[:100]}", flush=True)
+                print(f"FAILED {model_name}: {res.status_code} - {res.text[:120]}", flush=True)
         except Exception as e:
             last_error = f"Exception on {model_name}: {repr(e)[:80]}"
             print(f"ERR {model_name}: {last_error}", flush=True)
@@ -148,7 +159,7 @@ def chat_lakshya(message, history):
     CIRCUIT_BREAKER["is_open"] = True
     CIRCUIT_BREAKER["last_failure_time"] = time.time()
     return f"Chote, Google server ne mana kiya. (Reason: {last_error})"
-
+    
 demo = gr.ChatInterface(
     fn=chat_lakshya,
     title="Lakshya Mentor 2.0 🎯",
