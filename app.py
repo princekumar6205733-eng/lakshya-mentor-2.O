@@ -96,6 +96,11 @@ def chat_lakshya(message, history):
     if history:
         for turn in history:
             u_val, m_val = "", ""
+            # Robust multi-turn history builder (Strict alternate user/model structure)
+    contents = []
+    if history:
+        for turn in history:
+            u_val, m_val = "", ""
             if isinstance(turn, (list, tuple)) and len(turn) >= 2:
                 u_val = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "")
                 m_val = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "")
@@ -113,6 +118,7 @@ def chat_lakshya(message, history):
                 contents.append({"role": "model", "parts": [{"text": m_val.strip()}]})
 
     contents.append({"role": "user", "parts": [{"text": user_text}]})
+    
 
     payload = {
         "system_instruction": {
