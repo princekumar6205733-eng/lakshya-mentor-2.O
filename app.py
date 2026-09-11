@@ -4,7 +4,7 @@ import time
 import requests
 import gradio as gr
 
-API_KEY = os.environ.get("GEMINI_API_KEY")
+API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 SYSTEM_INSTRUCTION = """
 Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. 
@@ -18,16 +18,10 @@ IMPORTANT FORMATTING RULES:
 """
 
 MODELS = [
-    "gemini-2.5-flash",
+    "gemini-3.6-flash",
     "gemini-2.0-flash",
     "gemini-1.5-flash"
 ]
-
-CIRCUIT_BREAKER = {
-    "is_open": False,
-    "last_failure_time": 0,
-    "cooldown_seconds": 60
-}
 
 def clean_math_text(text):
     if not text:
@@ -35,21 +29,13 @@ def clean_math_text(text):
     return re.sub(r'\${1,2}', '', text).strip()
 
 def chat_lakshya(message, history):
-    current_time = time.time()
-
-    if CIRCUIT_BREAKER["is_open"]:
-        elapsed = current_time - CIRCUIT_BREAKER["last_failure_time"]
-        if elapsed < CIRCUIT_BREAKER["cooldown_seconds"]:
-            remaining = int(CIRCUIT_BREAKER["cooldown_seconds"] - elapsed)
-            return f"Chote, Google server abhi thoda garam hai! Bas {remaining} second ruko, fir batata hoon."
-        else:
-            CIRCUIT_BREAKER["is_open"] = False
+    if not API_KEY:
+        return "Error: GEMINI_API_KEY Render Environment Variables me nahi mili!"
 
     user_text = message.get("text", "") if isinstance(message, dict) else str(message)
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
-    # Single plain-text prompt packing (Zero SDK AFC bug)
     prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
     if history:
         for turn in history:
@@ -63,6 +49,8 @@ def chat_lakshya(message, history):
                 prompt += f"{role}: {c}\n"
     prompt += f"User: {user_text}\nAssistant:"
 
+    last_error = ""
+
     for model_name in MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
         payload = {
@@ -75,17 +63,17 @@ def chat_lakshya(message, history):
             if res.status_code == 200:
                 data = res.json()
                 reply = data["candidates"][0]["content"]["parts"][0]["text"]
-                CIRCUIT_BREAKER["is_open"] = False
                 return clean_math_text(reply)
             else:
-                print(f"GOOGLE_HTTP_ERROR [{model_name}] status {res.status_code}: {res.text}")
+                last_error = f"HTTP {res.status_code}: {res.text[:120]}"
+                print(f"FAILED {model_name}: {last_error}", flush=True)
         except Exception as e:
-            print(f"HTTP_EXCEPTION [{model_name}]: {repr(e)}")
+            last_error = f"Exception: {repr(e)[:100]}"
+            print(f"ERR {model_name}: {last_error}", flush=True)
             continue
 
-    CIRCUIT_BREAKER["is_open"] = True
-    CIRCUIT_BREAKER["last_failure_time"] = time.time()
-    return "Chote, abhi Google server par load zyada hai. Circuit protection active hai, 1 minute ruk kar fir se pucho!"
+    # Agar teeno fail ho jayein toh exact reason chat me dikhega
+    return f"Chote, Google server ne mana kiya. Reason: {last_error}"
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
@@ -94,5 +82,6 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
+
 
 
