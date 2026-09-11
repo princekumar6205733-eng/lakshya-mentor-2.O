@@ -17,12 +17,12 @@ IMPORTANT FORMATTING RULES:
 3. Simple aur saaf readable text hona chahiye.
 """
 
-# 3.6-flash sabse pehle, fallback me 2.0 aur 1.5
 ENDPOINTS = [
-    ("gemini-3.6-flash", "v1beta"),
+    ("gemini-2.5-flash", "v1beta"),
     ("gemini-2.0-flash", "v1beta"),
-    ("gemini-1.5-flash", "v1")
+    ("gemini-1.5-flash-latest", "v1beta")
 ]
+
 
 CIRCUIT_BREAKER = {
     "is_open": False,
