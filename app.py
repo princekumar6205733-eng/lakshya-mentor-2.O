@@ -56,7 +56,7 @@ def chat_lakshya(message, history):
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
-    for attempt in range(3):
+        for attempt in range(3):
         try:
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
@@ -66,22 +66,12 @@ def chat_lakshya(message, history):
                 )
             )
             return response.text
-                except Exception as e:
-            print("ASLI ERROR YAHAN HAI:", repr(e))
+        except Exception as e:
+            print("ASLI ERROR:", repr(e))
             if attempt < 2:
                 time.sleep(3)
                 continue
-            return f"Chote, abhi Google server par load/issue hai. (Error: {str(e)[:50]})"
-
-            
-            
-            
-            
-                
-    
-        
-
-
+            return f"Chote, abhi Google server issue hai. (Error: {str(e)[:40]})"
 
 demo = gr.ChatInterface(
     fn=chat_lakshya,
@@ -89,4 +79,4 @@ demo = gr.ChatInterface(
     description="Tumhare bhaiya ka banaya hua 24/7 personal study companion - Bihar Board Class 9"
 )
 
-demo.launch(server_name="0.0.0.0", server_port=int(os.environ.get("PORT", 7860)))
+demo.launch(server_name="0.0.0.0", server_port=7860)
