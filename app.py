@@ -56,27 +56,23 @@ def chat_lakshya(message, history):
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
-    # Model wahi rahega, temporary 503 traffic spike ke liye automatic 3 retry
+    # Gemini 3.6 Flash ke sath direct non-streaming call
     for attempt in range(3):
         try:
-            response = client.models.generate_content_stream(
+            response = client.models.generate_content(
                 model="gemini-3.6-flash",
                 contents=formatted_contents,
                 config=types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION
                 )
             )
-            full_reply = ""
-            for chunk in response:
-                full_reply += chunk.text
-                yield full_reply
-            return
-        except Exception as e:
+            return response.text
+        except Exception:
             if attempt < 2:
                 time.sleep(2)
                 continue
-            else:
-                yield "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+            return "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+            
                 
     
         
