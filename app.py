@@ -45,7 +45,7 @@ def chat_lakshya(message, history):
             content = extract_text(turn.get("content", ""))
             if content:
                 formatted_contents.append(types.Content(role=role, parts=[types.Part.from_text(text=content)]))
-        elif isinstance(turn, (list, tuple)) and len(turn) == 2:
+        elif isinstance(turn, (list, tuple)) and len(turn) >= 2:
             u_text = extract_text(turn[0])
             m_text = extract_text(turn[1])
             if u_text:
@@ -55,8 +55,8 @@ def chat_lakshya(message, history):
 
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
-    
-        for attempt in range(3):
+
+    for attempt in range(3):
         try:
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
@@ -71,6 +71,7 @@ def chat_lakshya(message, history):
                 time.sleep(3)
                 continue
             return "Chote, abhi Google server par thoda load hai. 1 minute ruk kar wapas message bhejo!"
+            
             
             
             
