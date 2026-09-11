@@ -1,12 +1,10 @@
 import os
 import re
 import time
-from google import genai
-from google.genai import types
+import requests
 import gradio as gr
 
-api_key = os.environ.get("GEMINI_API_KEY")
-client = genai.Client(api_key=api_key)
+API_KEY = os.environ.get("GEMINI_API_KEY")
 
 SYSTEM_INSTRUCTION = """
 Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. 
@@ -36,22 +34,6 @@ def clean_math_text(text):
         return ""
     return re.sub(r'\${1,2}', '', text).strip()
 
-def build_prompt(user_text, history):
-    # Puri chat ko safe text format me convert karta hai (Zero AFC warning)
-    prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
-    if history:
-        for turn in history:
-            if isinstance(turn, (list, tuple)) and len(turn) >= 2:
-                u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
-                m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
-                prompt += f"User: {u}\nAssistant: {m}\n"
-            elif isinstance(turn, dict):
-                role = "User" if turn.get("role") == "user" else "Assistant"
-                c = turn.get("content", "")
-                prompt += f"{role}: {c}\n"
-    prompt += f"User: {user_text}\nAssistant:"
-    return prompt
-
 def chat_lakshya(message, history):
     current_time = time.time()
 
@@ -67,19 +49,38 @@ def chat_lakshya(message, history):
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
-    full_prompt = build_prompt(user_text, history)
+    # Single plain-text prompt packing (Zero SDK AFC bug)
+    prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
+    if history:
+        for turn in history:
+            if isinstance(turn, (list, tuple)) and len(turn) >= 2:
+                u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
+                m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
+                prompt += f"User: {u}\nAssistant: {m}\n"
+            elif isinstance(turn, dict):
+                role = "User" if turn.get("role") == "user" else "Assistant"
+                c = turn.get("content", "")
+                prompt += f"{role}: {c}\n"
+    prompt += f"User: {user_text}\nAssistant:"
 
     for model_name in MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
+        }
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=full_prompt
-            )
-            if response and response.text:
+            res = requests.post(url, json=payload, timeout=25)
+            if res.status_code == 200:
+                data = res.json()
+                reply = data["candidates"][0]["content"]["parts"][0]["text"]
                 CIRCUIT_BREAKER["is_open"] = False
-                return clean_math_text(response.text)
+                return clean_math_text(reply)
+            else:
+                print(f"GOOGLE_HTTP_ERROR [{model_name}] status {res.status_code}: {res.text}")
         except Exception as e:
-            print(f"MODEL_ERROR [{model_name}]: {repr(e)}")
+            print(f"HTTP_EXCEPTION [{model_name}]: {repr(e)}")
             continue
 
     CIRCUIT_BREAKER["is_open"] = True
@@ -93,4 +94,5 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
+
 
