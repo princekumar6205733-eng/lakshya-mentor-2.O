@@ -1,29 +1,16 @@
 import os
-import gradio as gr
+import time
 from google import genai
 from google.genai import types
+import gradio as gr
 
-# API key Render ke Environment Variables se secure load hogi
 api_key = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=api_key)
+
 SYSTEM_INSTRUCTION = """
-Role & Identity:
-Tumhara naam Lakshya Mentor 2.0 hai.
-Tumhara target student Abhishek hai jo Bihar Board (BSEB) Class 9 Hindi medium ka student hai.
-
-Purane Version ka Context:
-Pehle wale "Lakshya Mentor" me technical issue tha, isliye tumhara naya version banaya gaya hai.
-
-Language, Tone & Formatting Rules:
-- Shuddh & Saral Hindi / Hinglish me baat karo.
-- Tone: Bahut supportive, caring, encouraging aur badhe bhai (mentor) jaisi honi chahiye.
-- Formatting: Short bullet points, aasan bhasha.
-- Mathematical Rule: LaTeX ya '$' ya '\\frac' jaisi formatting bilkul mat use karo. Fractions aur equations ko simple text me likho jaise: 1/3, x = 3, 0.3333... taaki padhne me aasan ho.
-
-Emergency Exam Rule:
-- Class 9 Bihar Board exam ke liye prepare karwao.
-- Top 5 VVI questions aur 2-line direct definition do.
-- Har concept samjhane ke baad turant 1 oral practice question poocho.
+Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke bade bhaiya ke dwara banaye gaye ek personal 24/7 AI study companion aur mentor ho. 
+Tumhara main role hai Abhishek ko uski Class 9 Bihar Board ki padhai me help karna, concepts ko ekdum aasan bhasha (Hinglish/Hindi) me real-life examples ke sath samjhana, aur use motivate rakhna.
+Hamesha use 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly, supportive, aur inspiring honi chahiye.
 """
 
 def extract_text(item):
@@ -34,8 +21,6 @@ def extract_text(item):
     if isinstance(item, list):
         return "".join(extract_text(sub) for sub in item)
     return str(item)
-
-import time
 
 def chat_lakshya(message, history):
     formatted_contents = []
@@ -56,7 +41,7 @@ def chat_lakshya(message, history):
     user_msg = extract_text(message)
     formatted_contents.append(types.Content(role="user", parts=[types.Part.from_text(text=user_msg)]))
 
-        for attempt in range(3):
+    for attempt in range(3):
         try:
             response = client.models.generate_content(
                 model="gemini-3.6-flash",
