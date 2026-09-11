@@ -23,8 +23,6 @@ ENDPOINTS = [
     "gemini-1.5-flash"
 ]
 
-
-
 CIRCUIT_BREAKER = {
     "is_open": False,
     "last_failure_time": 0,
@@ -39,7 +37,6 @@ def clean_math_text(text):
 def chat_lakshya(message, history):
     current_time = time.time()
 
-    # Circuit Breaker Protection
     if CIRCUIT_BREAKER["is_open"]:
         elapsed = current_time - CIRCUIT_BREAKER["last_failure_time"]
         if elapsed < CIRCUIT_BREAKER["cooldown_seconds"]:
@@ -55,7 +52,6 @@ def chat_lakshya(message, history):
     if not user_text.strip():
         return "Kuch pucho toh sahi, Chote!"
 
-    # Multi-turn history ko plain safe text me pack karna
     prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
     if history:
         for turn in history:
@@ -71,9 +67,8 @@ def chat_lakshya(message, history):
 
     last_error = ""
 
-    # Model Fallback Loop
-    for model_name, api_ver in ENDPOINTS:
-        url = f"https://generativelanguage.googleapis.com/v{api_ver}/models/{model_name}:generateContent?key={API_KEY}"
+    for model_name in ENDPOINTS:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
         payload = {
             "contents": [{
                 "parts": [{"text": prompt}]
@@ -94,7 +89,6 @@ def chat_lakshya(message, history):
             print(f"ERR {model_name}: {last_error}", flush=True)
             continue
 
-    # Agar sab endpoints fail ho jayein tab circuit open hoga
     CIRCUIT_BREAKER["is_open"] = True
     CIRCUIT_BREAKER["last_failure_time"] = time.time()
     return f"Chote, abhi Google server par load zyada hai. (Reason: {last_error})"
@@ -106,7 +100,4 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
-    
-
-
-
+                
