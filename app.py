@@ -6,13 +6,17 @@ import gradio as gr
 
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
-SYSTEM_INSTRUCTION = (
-    "Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. "
-    "Class 9 Bihar Board ki padhai aasan bhasha (Hinglish/Hindi) me samjhana aur motivate rakhna tumhara kaam hai. "
-    "Abhishek ko hamesha 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly aur desi rakho. "
-    "Kewal aur kewal seedha dialogue reply do. Koi thinking, draft ya checklist output me mat likho. "
-    "Maths me '$' ka use bilkul mat karna, normal plain text me likho."
-)
+SYSTEM_INSTRUCTION = """
+Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur elder brother (bhaiya) mentor ho.
+Mission: Abhishek ko Class 9 Bihar Board exam me top karwana.
+
+CORE PERSONA & WORKING RULES:
+1. Tone: Friendly, desi, motivating, aur elder brother jaisi. Abhishek ko hamesha 'Chote' ya 'Abhishek bhai' keh kar bulao.
+2. 10-DAY BIHAR BOARD EXAM DRILL: Abhishek ko 10-Day Exam Drill ke frame me guide karo (Maths, Science, Social Science, Hindi). Har din targeted revision aur important Bihar Board pattern ke questions par focus hona chahiye.
+3. PROACTIVE QUESTIONING: Kabhi bhi sirf answer dekar chat khatam mat karo! Har answer ke aakhir me Abhishek se usi topic par ek chota question ya cross-question pucho taaki wo active rahe aur revision hota rahe.
+4. CLEAN OUTPUT: Koi background thinking, draft, checklist ya evaluation text chat me nahi aana chahiye. Seedha final mentor dialogue do.
+5. NO LATEX: Formulas me '$' ya '$$' bilkul use mat karna. Plain text me likho (Jaise: x^2 - 9 = 0, a/b, sqrt(x)).
+"""
 
 CIRCUIT_BREAKER = {
     "is_open": False,
@@ -23,59 +27,43 @@ CIRCUIT_BREAKER = {
 def clean_mentor_output(text):
     if not text:
         return ""
-    # LaTeX stripping
     text = re.sub(r'\${1,2}', '', text)
     
-    # Agar output me double quotes me response ho toh seedha wahi uthao
-    quoted_matches = re.findall(r'"([^"]{15,})"', text, re.DOTALL)
+    quoted_matches = re.findall(r'"([^"]{20,})"', text, re.DOTALL)
     if quoted_matches:
-        return quoted_matches[-1].strip()
-
-    # Checklist, bullets aur internal monologue ko filter karna
-    cleaned_lines = []
-    for line in text.split('\n'):
-        l = line.strip()
-        if l.startswith(('•', '*', '-', 'o ', 'User:', 'Persona:', 'Role:', 'Target', 'Constraint', 'Greeting:', 'Refining', 'Draft')):
-            continue
-        cleaned_lines.append(line)
+        text = quoted_matches[-1]
+    else:
+        cleaned_lines = []
+        for line in text.split('\n'):
+            l = line.strip()
+            if l.startswith(('•', '*', 'o ', 'Persona:', 'Role:', 'Constraint:', 'Greeting:', 'Refining', 'Draft')):
+                continue
+            cleaned_lines.append(line)
+        text = '\n'.join(cleaned_lines)
         
-    res = '\n'.join(cleaned_lines).strip()
-    return res if res else text.strip()
+    return text.strip()
 
 def get_available_models():
-    """Heavy/Pro/TTS models ko block karke sirf reliable Flash chat models filter karta hai"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
-    # Hardcoded permanent fallback agar network call miss ho
     fallback_flash = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
     try:
         res = requests.get(url, timeout=10)
         if res.status_code == 200:
             data = res.json()
             valid_models = []
-            
-            # Heavy aur problematic model keywords
-            blocked_keywords = [
-                "tts", "audio", "embed", "imagen", "robot", 
-                "pro", "ultra", "exp", "vision", "learnlm"
-            ]
-
+            blocked = ["tts", "audio", "embed", "imagen", "robot", "pro", "ultra", "exp", "vision"]
             for m in data.get("models", []):
                 methods = m.get("supportedGenerationMethods", [])
                 name = m.get("name", "").replace("models/", "")
-                
-                # Sirf text generation wale flash models ko permission
                 if "generateContent" in methods:
-                    if any(bad in name.lower() for bad in blocked_keywords):
+                    if any(b in name.lower() for b in blocked):
                         continue
                     if "flash" in name.lower():
                         valid_models.append(name)
-            
             if valid_models:
-                print(f"ACTIVE_FLASH_MODELS_LOCKED: {valid_models}", flush=True)
                 return valid_models
-    except Exception as e:
-        print(f"FAILED_FETCHING_MODELS: {repr(e)}", flush=True)
-        
+    except Exception:
+        pass
     return fallback_flash
 
 ACTIVE_MODELS = get_available_models()
@@ -103,28 +91,27 @@ def chat_lakshya(message, history):
     if not ACTIVE_MODELS:
         ACTIVE_MODELS = get_available_models()
 
-    # Bulletproof contents formatter for Gemini API (Avoids HTTP 400)
+    # Robust multi-turn history builder (Strict alternate user/model structure)
     contents = []
     if history:
         for turn in history:
-            u_text, m_text = "", ""
+            u_val, m_val = "", ""
             if isinstance(turn, (list, tuple)) and len(turn) >= 2:
-                u_text = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "")
-                m_text = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "")
+                u_val = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0] or "")
+                m_val = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1] or "")
             elif isinstance(turn, dict):
-                role = turn.get("role", "")
-                text_val = turn.get("content", "")
-                if role == "user":
-                    u_text = text_val
+                r = turn.get("role", "")
+                c = turn.get("content", "")
+                if r == "user":
+                    u_val = c
                 else:
-                    m_text = text_val
+                    m_val = c
 
-            if u_text.strip():
-                contents.append({"role": "user", "parts": [{"text": u_text.strip()}]})
-            if m_text.strip():
-                contents.append({"role": "model", "parts": [{"text": m_text.strip()}]})
+            if u_val.strip():
+                contents.append({"role": "user", "parts": [{"text": u_val.strip()}]})
+            if m_val.strip():
+                contents.append({"role": "model", "parts": [{"text": m_val.strip()}]})
 
-    # Latest user query
     contents.append({"role": "user", "parts": [{"text": user_text}]})
 
     payload = {
@@ -159,7 +146,7 @@ def chat_lakshya(message, history):
     CIRCUIT_BREAKER["is_open"] = True
     CIRCUIT_BREAKER["last_failure_time"] = time.time()
     return f"Chote, Google server ne mana kiya. (Reason: {last_error})"
-    
+
 demo = gr.ChatInterface(
     fn=chat_lakshya,
     title="Lakshya Mentor 2.0 🎯",
@@ -167,6 +154,4 @@ demo = gr.ChatInterface(
 )
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
-    
-
-    
+            
