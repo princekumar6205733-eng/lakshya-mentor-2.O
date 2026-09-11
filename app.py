@@ -7,14 +7,14 @@ import gradio as gr
 API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 
 SYSTEM_INSTRUCTION = """
-Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho. 
+Tumhara naam Lakshya Mentor 2.0 hai. Tum Abhishek ke personal 24/7 AI study companion aur mentor ho.
 Tumhara main role hai Abhishek ko uski Class 9 Bihar Board ki padhai me help karna, concepts ko ekdum aasan bhasha (Hinglish/Hindi) me samjhana, aur motivate rakhna.
 Hamesha use 'Chote' ya 'Abhishek bhai' keh kar bulao. Tone friendly, desi aur supportive honi chahiye.
 
-IMPORTANT FORMATTING RULES:
-1. Maths ya Science ke kisi bhi formula ya equation me '$' ya '$$' (LaTeX syntax) bilkul use MAT karna.
-2. Har equation ko bilkul normal text ki tarah likho (Jaise: x^2 + 5x + 6 = 0, ya a/b, sqrt(x)).
-3. Simple aur saaf readable text hona chahiye.
+CRITICAL RULES:
+1. Kabhi bhi apna internal monologue, thought process, chain of thought ya analysis output me mat likho.
+2. Seedha final reply do. Koi checklist ya evaluation text bilkul nahi aana chahiye.
+3. Maths ya Science ke equations me '$' ya '$$' bilkul mat lagao. Normal text me likho (Jaise: x^2 + 5x + 6 = 0, sqrt(x), a/b).
 """
 
 CIRCUIT_BREAKER = {
@@ -26,10 +26,14 @@ CIRCUIT_BREAKER = {
 def clean_math_text(text):
     if not text:
         return ""
-    return re.sub(r'\${1,2}', '', text).strip()
+    # LaTeX stripping
+    text = re.sub(r'\${1,2}', '', text)
+    # Agar model ne galti se Draft/Thinking likha ho toh use saaf karna
+    if "Refining for Tone" in text:
+        text = text.split("Refining for Tone")[-1].replace('("Desi" and "Mentor-like"):', '')
+    return text.strip()
 
 def get_available_models():
-    """Google API se directly active supported models fetch karta hai"""
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={API_KEY}"
     try:
         res = requests.get(url, timeout=10)
@@ -73,29 +77,32 @@ def chat_lakshya(message, history):
         if not ACTIVE_MODELS:
             return "Chote, Google API se koi active model nahi mila. API Key check karo!"
 
-    prompt = f"System: {SYSTEM_INSTRUCTION}\n\n"
+    # Multi-turn structured chat format
+    contents = []
     if history:
         for turn in history:
             if isinstance(turn, (list, tuple)) and len(turn) >= 2:
                 u = turn[0].get("text", "") if isinstance(turn[0], dict) else str(turn[0])
                 m = turn[1].get("text", "") if isinstance(turn[1], dict) else str(turn[1])
-                prompt += f"User: {u}\nAssistant: {m}\n"
+                contents.append({"role": "user", "parts": [{"text": u}]})
+                contents.append({"role": "model", "parts": [{"text": m}]})
             elif isinstance(turn, dict):
-                role = "User" if turn.get("role") == "user" else "Assistant"
-                c = turn.get("content", "")
-                prompt += f"{role}: {c}\n"
-    prompt += f"User: {user_text}\nAssistant:"
+                role = "user" if turn.get("role") == "user" else "model"
+                contents.append({"role": role, "parts": [{"text": turn.get("content", "")}]})
+
+    contents.append({"role": "user", "parts": [{"text": user_text}]})
+
+    payload = {
+        "system_instruction": {
+            "parts": [{"text": SYSTEM_INSTRUCTION}]
+        },
+        "contents": contents
+    }
 
     last_error = ""
 
-    # Jo model active hai sirf usi ko call karega
     for model_name in ACTIVE_MODELS:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={API_KEY}"
-        payload = {
-            "contents": [{
-                "parts": [{"text": prompt}]
-            }]
-        }
         try:
             res = requests.post(url, json=payload, timeout=25)
             if res.status_code == 200:
@@ -123,3 +130,4 @@ demo = gr.ChatInterface(
 
 demo.launch(server_name="0.0.0.0", server_port=7860)
 
+    
